@@ -120,6 +120,11 @@ fn update_global_shortcut(app: tauri::AppHandle, old_shortcut: String, new_short
     Ok(())
 }
 
+#[tauri::command]
+fn read_clipboard() -> Result<String, String> {
+    tauri::api::clipboard::read_text().map_err(|e| e.to_string())
+}
+
 fn main() {
     // 创建系统托盘菜单
     let quit = CustomMenuItem::new("quit", "退出");
@@ -154,6 +159,14 @@ fn main() {
                 })
                 .expect("Failed to register global shortcut");
 
+            // 注册剪藏快捷键
+            let window_for_clip = window.clone();
+            app.global_shortcut_manager()
+                .register("Alt+Shift+S", move || {
+                    let _ = window_for_clip.emit("clip-shortcut-pressed", ());
+                })
+                .expect("Failed to register clip shortcut");
+
             // 监听窗口事件
             let window_for_event = window.clone();
             window.on_window_event(move |event| {
@@ -179,7 +192,8 @@ fn main() {
             read_knowledge, write_knowledge,
             read_settings, write_settings,
             check_due_reviews, send_review_notification,
-            update_global_shortcut
+            update_global_shortcut,
+            read_clipboard
         ])
         .system_tray(system_tray)
         .on_system_tray_event(|app, event| {

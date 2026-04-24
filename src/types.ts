@@ -37,6 +37,7 @@ export interface ShortcutSettings {
   clearSearch: string
   closeWindow: string
   focusSearch: string
+  clipShortcut: string
 }
 
 export const DEFAULT_SHORTCUTS: ShortcutSettings = {
@@ -44,4 +45,13 @@ export const DEFAULT_SHORTCUTS: ShortcutSettings = {
   clearSearch: 'Ctrl+K',
   closeWindow: 'Escape',
   focusSearch: 'Ctrl+L',
+  clipShortcut: 'Alt+Shift+S',
+}
+
+export interface ClipRecord {
+  id: string
+  query: string
+  tags: string[]
+  content: string[]
+  createdAt: number
 }
