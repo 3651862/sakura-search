@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { ExternalLink, BookOpen, Copy, CheckCircle } from 'lucide-react'
 import { open } from '@tauri-apps/api/shell'
-import { FollowUpMessage, KnowledgeItem } from '../types'
+import { FollowUpMessage, KnowledgeItem, ClipRecord } from '../types'
 import { KnowledgeCard } from './KnowledgeCard'
 
 interface WebResult {
@@ -13,7 +13,6 @@ interface WebResult {
 }
 
 interface SearchResultsProps {
-  query: string
   aiAnswer?: string
   reasoning?: string
   webResults: WebResult[]
@@ -22,10 +21,10 @@ interface SearchResultsProps {
   isFollowUpStreaming?: boolean
   followUpMessages?: FollowUpMessage[]
   knowledgeItems?: KnowledgeItem[]
+  clipMatches?: ClipRecord[]
 }
 
 export const SearchResults: React.FC<SearchResultsProps> = ({
-  query: _query,
   aiAnswer,
   reasoning,
   webResults,
@@ -34,8 +33,10 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
   isFollowUpStreaming,
   followUpMessages,
   knowledgeItems,
+  clipMatches,
 }) => {
   const [copied, setCopied] = React.useState(false)
+  const [webResultsExpanded, setWebResultsExpanded] = React.useState(true)
 
   const handleCopy = async (text: string) => {
     await navigator.clipboard.writeText(text)
@@ -54,6 +55,72 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
       exit={{ opacity: 0, height: 0 }}
     >
       <div className="max-h-[420px] overflow-y-auto">
+        {/* 智能回忆 - 剪藏匹配置顶 */}
+        {clipMatches && clipMatches.length > 0 && (
+          <div className="px-4 pt-3 pb-2">
+            <div className="flex items-center gap-1.5 mb-2">
+              <span
+                className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                style={{
+                  background: 'linear-gradient(135deg, #f9a8d4, #f472b6)',
+                  color: 'white',
+                }}
+              >
+                剪藏
+              </span>
+              <span className="text-[11px] text-warm-300 font-light">你之前搜过相关内容</span>
+            </div>
+
+            {clipMatches.map(clip => (
+              <div
+                key={clip.id}
+                className="p-3 rounded-xl mb-1.5 border"
+                style={{
+                  background: 'rgba(251,207,232,0.12)',
+                  borderColor: 'rgba(244,114,182,0.15)',
+                }}
+              >
+                <div className="text-[12px] text-warm-500 font-medium mb-1.5">{clip.query}</div>
+                <div className="flex flex-wrap gap-1 mb-1.5">
+                  {clip.tags.map((tag, i) => (
+                    <span
+                      key={i}
+                      className="text-[10px] px-2 py-0.5 rounded-full bg-sakura-50/60 text-sakura-500 border border-sakura-100/30"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+                <div className="text-[11px] text-warm-400 leading-relaxed font-light">
+                  {clip.content.join('；')}
+                </div>
+                <div className="text-[9px] text-warm-300 mt-1.5">
+                  {new Date(clip.createdAt).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })} 剪藏
+                </div>
+              </div>
+            ))}
+
+            {/* 折叠网络结果 */}
+            <button
+              onClick={() => setWebResultsExpanded(!webResultsExpanded)}
+              className="w-full flex items-center justify-center gap-1.5 py-2 mt-1 text-[11px] text-warm-300 hover:text-warm-400 transition-colors font-light"
+            >
+              <svg
+                className={`w-3 h-3 transition-transform ${webResultsExpanded ? 'rotate-90' : ''}`}
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M9 18l6-6-6-6" />
+              </svg>
+              <span>补充网络结果</span>
+            </button>
+          </div>
+        )}
+
+        {/* AI 回答和网页结果 - 有剪藏匹配时受折叠控制 */}
+        {(!clipMatches || clipMatches.length === 0 || webResultsExpanded) && <>
         {/* AI 回答 - 知识点精简模式 */}
         {aiAnswer && knowledgeItems && knowledgeItems.length > 0 && knowledgeItems.length <= 3 && !isStreaming && (
           <KnowledgeCard
@@ -209,6 +276,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
             </div>
           </div>
         )}
+        </>} {/* end webResultsExpanded conditional */}
       </div>
     </motion.div>
   )
