@@ -8,7 +8,7 @@ import { KnowledgeBase } from './components/KnowledgeBase'
 import { Settings } from './components/Settings'
 import { searchWithTavily, TavilySearchResult } from './services/tavily'
 import { streamSummary, StepfunMessage, extractKnowledge } from './services/stepfun'
-import { addSearchRecord, loadHistory, updateSearchRecord, loadSettings, saveSettings } from './services/storage'
+import { addSearchRecord, loadHistory, updateSearchRecord, addKnowledgeRecord, loadSettings, saveSettings } from './services/storage'
 import { FollowUpMessage, KnowledgeItem } from './types'
 import { appWindow } from '@tauri-apps/api/window'
 import { invoke } from '@tauri-apps/api/tauri'
@@ -139,6 +139,16 @@ function App() {
             // 提取知识点
             extractKnowledge(fullText).then(items => {
               setKnowledgeItems(items)
+              if (items.length > 0) {
+                addKnowledgeRecord({
+                  id: Date.now().toString(),
+                  query: searchQuery,
+                  items,
+                  createdAt: Date.now(),
+                  nextReviewAt: Date.now() + 1 * 24 * 60 * 60 * 1000,
+                  reviewCount: 0,
+                }).catch(console.error)
+              }
             }).catch(() => {
               setKnowledgeItems([])
             })
