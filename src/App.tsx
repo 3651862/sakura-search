@@ -7,9 +7,9 @@ import { SearchResults } from './components/SearchResults'
 import { KnowledgeBase } from './components/KnowledgeBase'
 import { Settings } from './components/Settings'
 import { searchWithTavily, TavilySearchResult } from './services/tavily'
-import { streamSummary, StepfunMessage } from './services/stepfun'
+import { streamSummary, StepfunMessage, extractKnowledge } from './services/stepfun'
 import { addSearchRecord, loadHistory, updateSearchRecord, loadSettings, saveSettings } from './services/storage'
-import { FollowUpMessage } from './types'
+import { FollowUpMessage, KnowledgeItem } from './types'
 import { appWindow } from '@tauri-apps/api/window'
 import { invoke } from '@tauri-apps/api/tauri'
 import { themes, ThemeContext, ThemeName } from './themes'
@@ -35,6 +35,7 @@ function App() {
   const [followUpStreaming, setFollowUpStreaming] = useState(false)
   const [activeTab, setActiveTab] = useState<TabType>('search')
   const [themeName, setThemeName] = useState<ThemeName>('sakura')
+  const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeItem[]>([])
   const theme = themes[themeName]
 
   useEffect(() => {
@@ -59,6 +60,7 @@ function App() {
     setError(null)
     setFollowUpMessages([])
     setFollowUpStreaming(false)
+    setKnowledgeItems([])
 
     try {
       const tavilyResult = await searchWithTavily(searchQuery)
@@ -134,6 +136,12 @@ function App() {
               createdAt: Date.now(),
               nextReviewAt: Date.now() + 1 * 24 * 60 * 60 * 1000,
             }).catch(console.error)
+            // 提取知识点
+            extractKnowledge(fullText).then(items => {
+              setKnowledgeItems(items)
+            }).catch(() => {
+              setKnowledgeItems([])
+            })
           },
           onError: (err) => {
             setError(err.message)
@@ -369,6 +377,7 @@ function App() {
                       onFollowUp={handleFollowUp}
                       isFollowUpStreaming={followUpStreaming}
                       followUpMessages={followUpMessages}
+                      knowledgeItems={knowledgeItems}
                     />
                   </motion.div>
                 )}
