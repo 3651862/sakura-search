@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Search, Trash2, X, Bookmark } from 'lucide-react'
 import { ClipRecord } from '../types'
-import { loadClipRecords, deleteClipRecord } from '../services/storage'
+import { loadClipRecords, deleteClipRecord, updateClipRecord } from '../services/storage'
 import { useTheme } from '../themes'
 
 interface ClipPanelProps {
@@ -15,6 +15,8 @@ export const ClipPanel: React.FC<ClipPanelProps> = ({ isOpen, onClose }) => {
   const [records, setRecords] = useState<ClipRecord[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
+  const [noteText, setNoteText] = useState('')
 
   useEffect(() => {
     if (isOpen) refreshRecords()
@@ -151,6 +153,53 @@ export const ClipPanel: React.FC<ClipPanelProps> = ({ isOpen, onClose }) => {
                           <span className="text-[11px] text-warm-500 font-light">{record.content[i]}</span>
                         </div>
                       ))}
+
+                      {/* 批注 */}
+                      {editingNoteId === record.id ? (
+                        <div className="mt-2">
+                          <input
+                            type="text"
+                            value={noteText}
+                            onChange={e => setNoteText(e.target.value)}
+                            onKeyDown={async e => {
+                              if (e.key === 'Enter') {
+                                await updateClipRecord(record.id, { note: noteText.trim() || undefined })
+                                setEditingNoteId(null)
+                                await refreshRecords()
+                              }
+                              if (e.key === 'Escape') setEditingNoteId(null)
+                            }}
+                            onBlur={async () => {
+                              await updateClipRecord(record.id, { note: noteText.trim() || undefined })
+                              setEditingNoteId(null)
+                              await refreshRecords()
+                            }}
+                            placeholder="写一句批注..."
+                            autoFocus
+                            className="w-full bg-sakura-50/50 border border-sakura-200/40 rounded-lg px-2.5 py-1 text-[11px] text-warm-600 outline-none focus:border-sakura-300 placeholder:text-warm-300 font-light"
+                          />
+                        </div>
+                      ) : (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setEditingNoteId(record.id)
+                            setNoteText(record.note || '')
+                          }}
+                          className="mt-2 w-full text-left"
+                        >
+                          {record.note ? (
+                            <div className="text-[11px] text-warm-500 font-light italic border-l-2 border-sakura-200 pl-2">
+                              💬 {record.note}
+                            </div>
+                          ) : (
+                            <div className="text-[10px] text-warm-300 hover:text-sakura-400 transition-colors font-light">
+                              + 添加批注
+                            </div>
+                          )}
+                        </button>
+                      )}
+
                       <button
                         onClick={(e) => { e.stopPropagation(); handleDelete(record.id) }}
                         className="mt-2 flex items-center gap-1 text-[10px] text-warm-300 hover:text-red-400 transition-colors"

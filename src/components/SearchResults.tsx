@@ -1,9 +1,8 @@
 import React from 'react'
 import { motion } from 'framer-motion'
-import { ExternalLink, BookOpen, Copy, CheckCircle } from 'lucide-react'
+import { ExternalLink, BookOpen, Copy, CheckCircle, Bookmark } from 'lucide-react'
 import { open } from '@tauri-apps/api/shell'
-import { FollowUpMessage, KnowledgeItem, ClipRecord } from '../types'
-import { KnowledgeCard } from './KnowledgeCard'
+import { FollowUpMessage, ClipRecord } from '../types'
 
 interface WebResult {
   title: string
@@ -17,11 +16,12 @@ interface SearchResultsProps {
   reasoning?: string
   webResults: WebResult[]
   isStreaming?: boolean
+  isLocalMatch?: boolean
   onFollowUp?: (question: string) => void
   isFollowUpStreaming?: boolean
   followUpMessages?: FollowUpMessage[]
-  knowledgeItems?: KnowledgeItem[]
   clipMatches?: ClipRecord[]
+  onClip?: (note?: string) => void
 }
 
 export const SearchResults: React.FC<SearchResultsProps> = ({
@@ -32,10 +32,14 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
   onFollowUp,
   isFollowUpStreaming,
   followUpMessages,
-  knowledgeItems,
   clipMatches,
+  isLocalMatch,
+  onClip,
 }) => {
   const [copied, setCopied] = React.useState(false)
+  const [clipped, setClipped] = React.useState(false)
+  const [showNoteInput, setShowNoteInput] = React.useState(false)
+  const [noteText, setNoteText] = React.useState('')
   const [webResultsExpanded, setWebResultsExpanded] = React.useState(true)
 
   const handleCopy = async (text: string) => {
@@ -121,18 +125,8 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
 
         {/* AI 回答和网页结果 - 有剪藏匹配时受折叠控制 */}
         {(!clipMatches || clipMatches.length === 0 || webResultsExpanded) && <>
-        {/* AI 回答 - 知识点精简模式 */}
-        {aiAnswer && knowledgeItems && knowledgeItems.length > 0 && knowledgeItems.length <= 3 && !isStreaming && (
-          <KnowledgeCard
-            items={knowledgeItems}
-            fullAnswer={aiAnswer}
-            reasoning={reasoning}
-            isStreaming={false}
-          />
-        )}
-
-        {/* AI 回答 - 完整模式（复杂问题或无知识点） */}
-        {aiAnswer && (!knowledgeItems || knowledgeItems.length === 0 || knowledgeItems.length > 3) && (
+        {/* AI 回答 */}
+        {aiAnswer && (
           <div className="p-4 pb-3">
             <div className="glass-card p-3.5 shadow-sakura relative overflow-hidden">
               {/* 左侧樱花色装饰线 */}
@@ -142,10 +136,17 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
                 <div className="w-6 h-6 rounded-full bg-gradient-to-br from-sakura-300 to-sakura-400 flex items-center justify-center shadow-sakura">
                   <span className="text-white text-[9px] font-bold">AI</span>
                 </div>
-                <span className="text-[12px] font-medium text-warm-500 tracking-wide">快速回答</span>
+                <span className="text-[12px] font-medium text-warm-500 tracking-wide">
+                  {isLocalMatch ? '本地回答' : '快速回答'}
+                </span>
+                {isLocalMatch && (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-sakura-50/60 text-sakura-400 border border-sakura-100/30">
+                    来自剪藏
+                  </span>
+                )}
                 <button
                   onClick={() => handleCopy(aiAnswer)}
-                  className="ml-auto p-1.5 rounded-lg hover:bg-warm-100/60 transition-colors"
+                  className="p-1.5 rounded-lg hover:bg-warm-100/60 transition-colors"
                   title={copied ? '已复制' : '复制'}
                 >
                   {copied ? (
@@ -154,6 +155,22 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
                     <Copy className="w-3.5 h-3.5 text-warm-300 hover:text-warm-400" />
                   )}
                 </button>
+                {!isStreaming && onClip && (
+                  <button
+                    onClick={() => {
+                      if (clipped) return
+                      setShowNoteInput(true)
+                    }}
+                    className="p-1.5 rounded-lg hover:bg-warm-100/60 transition-colors"
+                    title={clipped ? '已剪藏' : '剪藏'}
+                  >
+                    {clipped ? (
+                      <CheckCircle className="w-3.5 h-3.5 text-sakura-400" />
+                    ) : (
+                      <Bookmark className="w-3.5 h-3.5 text-warm-300 hover:text-sakura-400" />
+                    )}
+                  </button>
+                )}
               </div>
 
               <div className="text-warm-700 text-[14px] leading-relaxed pl-3 font-light">
@@ -173,6 +190,41 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
                 <p className={isStreaming && aiAnswer ? 'streaming-cursor' : ''}>
                   {aiAnswer}
                 </p>
+
+                {/* 剪藏批注输入 */}
+                {showNoteInput && onClip && (
+                  <div className="mt-2.5 flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={noteText}
+                      onChange={e => setNoteText(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          onClip(noteText.trim() || undefined)
+                          setShowNoteInput(false)
+                          setNoteText('')
+                          setClipped(true)
+                          setTimeout(() => setClipped(false), 2000)
+                        }
+                        if (e.key === 'Escape') {
+                          setShowNoteInput(false)
+                          setNoteText('')
+                        }
+                      }}
+                      onBlur={() => {
+                        // 失焦时直接保存（含空批注）
+                        onClip(noteText.trim() || undefined)
+                        setShowNoteInput(false)
+                        setNoteText('')
+                        setClipped(true)
+                        setTimeout(() => setClipped(false), 2000)
+                      }}
+                      placeholder="写一句批注（回车确认，Esc跳过）..."
+                      autoFocus
+                      className="flex-1 bg-sakura-50/50 border border-sakura-200/40 rounded-xl px-3 py-1.5 text-[12px] text-warm-600 outline-none focus:border-sakura-300 placeholder:text-warm-300 font-light"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* 追问对话 */}

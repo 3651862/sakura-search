@@ -1,5 +1,5 @@
 import React from 'react'
-import { X, Minus, Flower2, Search, BookOpen, Settings } from 'lucide-react'
+import { X, Minus, Flower2, Search, Settings, Bookmark, Languages } from 'lucide-react'
 import { TabType } from '../App'
 import { useTheme, themes, ThemeName } from '../themes'
 
@@ -8,13 +8,14 @@ interface TitleBarProps {
   onMinimize: () => void
   activeTab: TabType
   onTabChange: (tab: TabType) => void
+  onOpenClipPanel: () => void
 }
 
-export const TitleBar: React.FC<TitleBarProps> = ({ onClose, onMinimize, activeTab, onTabChange }) => {
+export const TitleBar: React.FC<TitleBarProps> = ({ onClose, onMinimize, activeTab, onTabChange, onOpenClipPanel }) => {
   const { themeName, setThemeName } = useTheme()
   const tabs: { key: TabType; icon: React.ReactNode; label: string }[] = [
     { key: 'search', icon: <Search className="w-3 h-3" />, label: '搜索' },
-    { key: 'knowledge', icon: <BookOpen className="w-3 h-3" />, label: '知识库' },
+    { key: 'translate', icon: <Languages className="w-3 h-3" />, label: '翻译' },
     { key: 'settings', icon: <Settings className="w-3 h-3" />, label: '设置' },
   ]
 
@@ -85,6 +86,14 @@ export const TitleBar: React.FC<TitleBarProps> = ({ onClose, onMinimize, activeT
             <span>{tab.label}</span>
           </button>
         ))}
+        <button
+          onClick={onOpenClipPanel}
+          className="flex items-center gap-1 px-2 py-2 text-[11px] text-warm-300 hover:text-sakura-400 transition-colors font-light ml-auto"
+          title="剪藏库"
+        >
+          <Bookmark className="w-3 h-3" />
+          <span>剪藏</span>
+        </button>
       </div>
     </div>
   )

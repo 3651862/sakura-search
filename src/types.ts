@@ -3,15 +3,6 @@ export interface KnowledgeItem {
   value: string
 }
 
-export interface KnowledgeRecord {
-  id: string
-  query: string
-  items: KnowledgeItem[]
-  createdAt: number
-  nextReviewAt: number
-  reviewCount: number
-}
-
 export interface FollowUpMessage {
   question: string
   answer: string
@@ -53,5 +44,6 @@ export interface ClipRecord {
   query: string
   tags: string[]
   content: string[]
+  note?: string
   createdAt: number
 }

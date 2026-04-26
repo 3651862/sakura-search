@@ -9,7 +9,9 @@ export const Settings: React.FC = () => {
   const [editingKey, setEditingKey] = useState<keyof ShortcutSettings | null>(null)
 
   useEffect(() => {
-    loadSettings().then(setShortcuts)
+    loadSettings().then(s => {
+      setShortcuts(s)
+    })
   }, [])
 
   const shortcutLabels: Record<keyof ShortcutSettings, string> = {
@@ -17,7 +19,7 @@ export const Settings: React.FC = () => {
     clearSearch: '清空搜索框',
     closeWindow: '关闭窗口',
     focusSearch: '聚焦搜索框',
-    clipShortcut: '剪藏快捷键',
+    clipShortcut: '剪藏选中文字',
   }
 
   const formatShortcut = (shortcut: string) => {
@@ -57,6 +59,9 @@ export const Settings: React.FC = () => {
 
       if (key === 'toggleWindow') {
         invoke('update_global_shortcut', { oldShortcut, newShortcut }).catch(console.error)
+      }
+      if (key === 'clipShortcut') {
+        invoke('update_clip_shortcut', { oldShortcut, newShortcut }).catch(console.error)
       }
     }
   }, [shortcuts])

@@ -4,27 +4,32 @@ import { CherryBlossom } from './components/CherryBlossom'
 import { TitleBar } from './components/TitleBar'
 import { SearchBox } from './components/SearchBox'
 import { SearchResults } from './components/SearchResults'
-import { KnowledgeBase } from './components/KnowledgeBase'
+import { ClipPanel } from './components/ClipPanel'
+import { ClipToast } from './components/ClipToast'
 import { Settings } from './components/Settings'
+import { TranslatePanel } from './components/TranslatePanel'
 import { searchWithTavily, TavilySearchResult } from './services/tavily'
 import { streamSummary, StepfunMessage, extractKnowledge } from './services/stepfun'
-import { addSearchRecord, loadHistory, updateSearchRecord, addKnowledgeRecord, loadSettings, saveSettings } from './services/storage'
-import { FollowUpMessage, KnowledgeItem } from './types'
+import { addSearchRecord, loadHistory, updateSearchRecord, addClipRecord, loadClipRecords, loadSettings, saveSettings } from './services/storage'
+import { FollowUpMessage, ClipRecord } from './types'
 import { appWindow } from '@tauri-apps/api/window'
 import { invoke } from '@tauri-apps/api/tauri'
+import { listen } from '@tauri-apps/api/event'
 import { themes, ThemeContext, ThemeName } from './themes'
 import { DecoLayer } from './components/DecoLayer'
+import { SakuraCursor } from './components/SakuraCursor'
 
 interface SearchResult {
   query: string
   aiAnswer: string
   reasoning?: string
   webResults: TavilySearchResult[]
+  isLocalMatch?: boolean
 }
 
 type SearchStatus = 'idle' | 'searching' | 'streaming' | 'success' | 'error'
 
-export type TabType = 'search' | 'knowledge' | 'settings'
+export type TabType = 'search' | 'translate' | 'settings'
 
 function App() {
   const [status, setStatus] = useState<SearchStatus>('idle')
@@ -35,7 +40,10 @@ function App() {
   const [followUpStreaming, setFollowUpStreaming] = useState(false)
   const [activeTab, setActiveTab] = useState<TabType>('search')
   const [themeName, setThemeName] = useState<ThemeName>('sakura')
-  const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeItem[]>([])
+  const [clipMatches, setClipMatches] = useState<ClipRecord[]>([])
+  const [clipPanelOpen, setClipPanelOpen] = useState(false)
+  const [clipToastVisible, setClipToastVisible] = useState(false)
+  const [clipToastCount, setClipToastCount] = useState(0)
   const theme = themes[themeName]
 
   useEffect(() => {
@@ -60,7 +68,43 @@ function App() {
     setError(null)
     setFollowUpMessages([])
     setFollowUpStreaming(false)
-    setKnowledgeItems([])
+    setClipMatches([])
+
+    // Local First：先查本地剪藏
+    try {
+      const records = await loadClipRecords()
+      const queryLower = searchQuery.toLowerCase()
+      const queryWords = queryLower.split(/\s+/).filter(w => w.length > 0)
+      const matches = records.filter(r => {
+        const searchable = [r.query, ...r.tags, ...r.content].join(' ').toLowerCase()
+        const matchCount = queryWords.filter(w => searchable.includes(w)).length
+        return matchCount / queryWords.length >= 0.4
+      }).slice(0, 3)
+      if (matches.length > 0) setClipMatches(matches)
+
+      // 高匹配度 → 零延迟回答，不调 API
+      const strongMatches = records.filter(r => {
+        const queryText = r.query.toLowerCase()
+        // 查询词全部命中，或原 query 高度相似
+        const allWordsMatch = queryWords.every(w => queryText.includes(w))
+        const querySimilar = queryLower.includes(queryText) || queryText.includes(queryLower)
+        return allWordsMatch || querySimilar
+      })
+
+      if (strongMatches.length > 0) {
+        const best = strongMatches[0]
+        const noteLine = best.note ? `\n\n💬 ${best.note}` : ''
+        const localAnswer = best.content.join('；') + noteLine
+        setResults({
+          query: searchQuery,
+          aiAnswer: localAnswer,
+          webResults: [],
+          isLocalMatch: true,
+        })
+        setStatus('success')
+        return
+      }
+    } catch {}
 
     try {
       const tavilyResult = await searchWithTavily(searchQuery)
@@ -136,22 +180,6 @@ function App() {
               createdAt: Date.now(),
               nextReviewAt: Date.now() + 1 * 24 * 60 * 60 * 1000,
             }).catch(console.error)
-            // 提取知识点
-            extractKnowledge(fullText).then(items => {
-              setKnowledgeItems(items)
-              if (items.length > 0) {
-                addKnowledgeRecord({
-                  id: Date.now().toString(),
-                  query: searchQuery,
-                  items,
-                  createdAt: Date.now(),
-                  nextReviewAt: Date.now() + 1 * 24 * 60 * 60 * 1000,
-                  reviewCount: 0,
-                }).catch(console.error)
-              }
-            }).catch(() => {
-              setKnowledgeItems([])
-            })
           },
           onError: (err) => {
             setError(err.message)
@@ -164,6 +192,27 @@ function App() {
       console.error('搜索错误:', err)
       setError(err instanceof Error ? err.message : '搜索过程中发生错误')
       setStatus('error')
+    }
+  }, [])
+
+  const handleClip = useCallback(async (aiAnswer: string, query: string, note?: string) => {
+    try {
+      const items = await extractKnowledge(aiAnswer)
+      if (items.length > 0) {
+        await addClipRecord({
+          id: Date.now().toString(),
+          query,
+          tags: items.map(item => item.key),
+          content: items.map(item => item.value),
+          note: note?.trim() || undefined,
+          createdAt: Date.now(),
+        })
+        setClipToastCount(items.length)
+        setClipToastVisible(true)
+        setTimeout(() => setClipToastVisible(false), 1500)
+      }
+    } catch (err) {
+      console.error('剪藏失败:', err)
     }
   }, [])
 
@@ -245,21 +294,35 @@ function App() {
     }
   }, [])
 
+  // 剪藏快捷键监听
   useEffect(() => {
-    const checkReviews = async () => {
+    const unlisten = listen('clip-shortcut-pressed', async () => {
       try {
-        const count = await invoke<number>('check_due_reviews')
-        if (count > 0) {
-          await invoke('send_review_notification', { count })
+        const text = await invoke<string>('read_clipboard')
+        if (!text || !text.trim()) return
+
+        await appWindow.show()
+        await appWindow.setFocus()
+
+        const items = await extractKnowledge(text)
+        if (items.length > 0) {
+          await addClipRecord({
+            id: Date.now().toString(),
+            query: text.slice(0, 50),
+            tags: items.map(item => item.key),
+            content: items.map(item => item.value),
+            createdAt: Date.now(),
+          })
+          setClipToastCount(items.length)
+          setClipToastVisible(true)
+          setTimeout(() => setClipToastVisible(false), 1500)
         }
       } catch (err) {
-        console.error('复习检查失败:', err)
+        console.error('剪藏失败:', err)
       }
-    }
+    })
 
-    checkReviews()
-    const interval = setInterval(checkReviews, 5 * 60 * 1000)
-    return () => clearInterval(interval)
+    return () => { unlisten.then(fn => fn()) }
   }, [])
 
   useEffect(() => {
@@ -304,6 +367,7 @@ function App() {
       {/* 樱花背景 */}
       <CherryBlossom count={12} petalColors={theme.petalColors} />
       <DecoLayer />
+      <SakuraCursor />
 
       {/* 主内容 */}
       <div className="relative z-10 flex flex-col h-full min-h-screen">
@@ -312,6 +376,7 @@ function App() {
           onMinimize={handleMinimize}
           activeTab={activeTab}
           onTabChange={setActiveTab}
+          onOpenClipPanel={() => setClipPanelOpen(true)}
         />
 
         <div className="flex-1 p-4 pt-2 overflow-hidden">
@@ -379,15 +444,16 @@ function App() {
                     className="flex-1 overflow-y-auto"
                   >
                     <SearchResults
-                      query={results.query}
                       aiAnswer={results.aiAnswer}
                       reasoning={results.reasoning}
                       webResults={results.webResults}
                       isStreaming={status === 'streaming'}
+                      isLocalMatch={results.isLocalMatch}
                       onFollowUp={handleFollowUp}
                       isFollowUpStreaming={followUpStreaming}
                       followUpMessages={followUpMessages}
-                      knowledgeItems={knowledgeItems}
+                      clipMatches={clipMatches}
+                      onClip={(note) => results && handleClip(results.aiAnswer, results.query, note)}
                     />
                   </motion.div>
                 )}
@@ -395,10 +461,26 @@ function App() {
             </motion.div>
           )}
 
-          {activeTab === 'knowledge' && <KnowledgeBase />}
           {activeTab === 'settings' && <Settings />}
+
+          {activeTab === 'translate' && (
+            <motion.div
+              initial={{ opacity: 0, y: -5 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.25 }}
+              className="w-full h-full"
+            >
+              <TranslatePanel />
+            </motion.div>
+          )}
         </div>
       </div>
+
+      {/* 剪藏面板 */}
+      <ClipPanel isOpen={clipPanelOpen} onClose={() => setClipPanelOpen(false)} />
+
+      {/* 剪藏成功提示 */}
+      <ClipToast visible={clipToastVisible} tagCount={clipToastCount} />
     </div>
     </ThemeContext.Provider>
   )

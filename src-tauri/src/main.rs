@@ -10,6 +10,12 @@ use std::fs;
 use std::path::PathBuf;
 use tauri::api::path::app_data_dir;
 
+#[tauri::command]
+fn read_clipboard() -> Result<String, String> {
+    let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+    clipboard.get_text().map_err(|e| e.to_string())
+}
+
 // 窗口可见状态
 static WINDOW_VISIBLE: AtomicBool = AtomicBool::new(false);
 
@@ -121,8 +127,19 @@ fn update_global_shortcut(app: tauri::AppHandle, old_shortcut: String, new_short
 }
 
 #[tauri::command]
-fn read_clipboard() -> Result<String, String> {
-    tauri::api::clipboard::read_text().map_err(|e| e.to_string())
+fn update_clip_shortcut(app: tauri::AppHandle, old_shortcut: String, new_shortcut: String) -> Result<(), String> {
+    let mut manager = app.global_shortcut_manager();
+
+    if manager.is_registered(&old_shortcut).unwrap_or(false) {
+        manager.unregister(&old_shortcut).map_err(|e| e.to_string())?;
+    }
+
+    let window = app.get_window("main").unwrap();
+    manager.register(&new_shortcut, move || {
+        let _ = window.emit("clip-shortcut-pressed", ());
+    }).map_err(|e| e.to_string())?;
+
+    Ok(())
 }
 
 fn main() {
@@ -192,7 +209,7 @@ fn main() {
             read_knowledge, write_knowledge,
             read_settings, write_settings,
             check_due_reviews, send_review_notification,
-            update_global_shortcut,
+            update_global_shortcut, update_clip_shortcut,
             read_clipboard
         ])
         .system_tray(system_tray)
