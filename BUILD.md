@@ -1,4 +1,4 @@
-# Sakura Search 构建指南
+# Sakura 构建指南
 
 ## 环境要求
 
